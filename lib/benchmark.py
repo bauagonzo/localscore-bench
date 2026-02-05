@@ -48,8 +48,15 @@ class TestResult:
     # System info
     cpu_info: str = ""
     gpu_info: str = ""
+    gpu_index: int = 0
     model_type: str = ""
     model_filename: str = ""
+    model_size: int = 0
+    model_n_params: int = 0
+
+    # Sample data
+    pp_samples_ns: List[int] = field(default_factory=list)
+    tg_samples_ns: List[int] = field(default_factory=list)
 
 
 class LlamaBench:
@@ -57,11 +64,13 @@ class LlamaBench:
 
     def __init__(self, llama_bench_path: str, model_path: str,
                  n_gpu_layers: int = 99, device: Optional[str] = None,
-                 threads: Optional[int] = None, verbose: bool = False):
+                 gpu_index: int = 0, threads: Optional[int] = None,
+                 verbose: bool = False):
         self.llama_bench_path = Path(llama_bench_path).resolve()
         self.model_path = Path(model_path).resolve()
         self.n_gpu_layers = n_gpu_layers
         self.device = device
+        self.gpu_index = gpu_index
         self.threads = threads
         self.verbose = verbose
 
@@ -193,8 +202,13 @@ class LlamaBench:
             repetitions=repetitions,
             cpu_info=pp_result.cpu_info,
             gpu_info=pp_result.gpu_info,
+            gpu_index=self.gpu_index,
             model_type=pp_result.model_type,
             model_filename=pp_result.model_filename,
+            model_size=pp_result.model_size,
+            model_n_params=pp_result.model_n_params,
+            pp_samples_ns=pp_result.samples_ns,
+            tg_samples_ns=tg_result.samples_ns,
         )
 
     def get_system_info(self) -> Dict[str, Any]:
@@ -208,6 +222,14 @@ class LlamaBench:
             "model_filename": result.model_filename,
             "model_size": result.model_size,
             "model_n_params": result.model_n_params,
+            "build_commit": result.build_commit,
+            "build_number": result.build_number,
+        }
+
+    def get_build_info(self) -> Dict[str, Any]:
+        """Get build info by running a minimal benchmark."""
+        result = self.run_single(16, 0, 1)
+        return {
             "build_commit": result.build_commit,
             "build_number": result.build_number,
         }

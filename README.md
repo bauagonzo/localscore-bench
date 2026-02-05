@@ -68,6 +68,9 @@ python main.py -m model.gguf -o json
 | `--long` | Run 16 repetitions | off |
 | `--reps N` | Custom number of repetitions | 1 |
 | `--quick` | Run only 3 representative tests | off |
+| `--save-csv FILE` | Save results to CSV file | - |
+| `--save-json FILE` | Save results to JSON file | - |
+| `--save-console FILE` | Save console output to text file | - |
 
 ## Benchmark Tests
 
@@ -166,6 +169,11 @@ Submitted data includes:
 - System information (CPU, RAM, OS)
 - GPU/Accelerator information
 - Benchmark results and score
+
+**Note:** The localscore.ai API may be protected by bot detection (Vercel WAF) which can block programmatic submissions. If you encounter 403 errors:
+1. Export results with `-o json` and submit manually
+2. Use the official localscore binary for submission
+3. Try again later (rate limiting may be in effect)
 
 ## Differences from Original localscore
 

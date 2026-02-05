@@ -159,6 +159,27 @@ Examples:
         help="Run only 3 representative tests instead of all 9",
     )
 
+    parser.add_argument(
+        "--save-csv",
+        dest="save_csv",
+        metavar="FILE",
+        help="Save results to CSV file",
+    )
+
+    parser.add_argument(
+        "--save-json",
+        dest="save_json",
+        metavar="FILE",
+        help="Save results to JSON file",
+    )
+
+    parser.add_argument(
+        "--save-console",
+        dest="save_console",
+        metavar="FILE",
+        help="Save console output to text file",
+    )
+
     return parser.parse_args()
 
 
@@ -206,32 +227,71 @@ def run_benchmarks(
     return results
 
 
-def output_json(results: List[TestResult], summary: ScoreSummary) -> None:
-    """Output results in JSON format."""
+def output_json(results: List[TestResult], summary: ScoreSummary, build_info=None, file=None) -> str:
+    """Output results in JSON format. Returns the JSON string."""
     import json
     from lib.submit import build_payload
 
-    payload = build_payload(results, summary)
-    print(json.dumps(payload, indent=2))
+    payload = build_payload(results, summary, build_info=build_info)
+    json_str = json.dumps(payload, indent=2)
+
+    if file:
+        print(json_str, file=file)
+    else:
+        print(json_str)
+
+    return json_str
 
 
-def output_csv(results: List[TestResult], summary: ScoreSummary) -> None:
-    """Output results in CSV format."""
+def output_csv(results: List[TestResult], summary: ScoreSummary, file=None) -> str:
+    """Output results in CSV format. Returns the CSV string."""
+    import io
+    output = io.StringIO()
+
     # Header
-    print("test,n_prompt,n_gen,prompt_tps,gen_tps,ttft_ms")
+    output.write("test,n_prompt,n_gen,prompt_tps,gen_tps,ttft_ms\n")
 
     # Data rows
     for r in results:
-        print(f"{r.config.name},{r.config.n_prompt},{r.config.n_gen},"
-              f"{r.prompt_tps:.2f},{r.gen_tps:.2f},{r.ttft_ms:.2f}")
+        output.write(f"{r.config.name},{r.config.n_prompt},{r.config.n_gen},"
+                     f"{r.prompt_tps:.2f},{r.gen_tps:.2f},{r.ttft_ms:.2f}\n")
 
     # Summary
-    print()
-    print(f"# Summary")
-    print(f"# avg_prompt_tps,{summary.avg_prompt_tps:.2f}")
-    print(f"# avg_gen_tps,{summary.avg_gen_tps:.2f}")
-    print(f"# avg_ttft_ms,{summary.avg_ttft_ms:.2f}")
-    print(f"# performance_score,{summary.performance_score:.2f}")
+    output.write("\n")
+    output.write(f"# Summary\n")
+    output.write(f"# avg_prompt_tps,{summary.avg_prompt_tps:.2f}\n")
+    output.write(f"# avg_gen_tps,{summary.avg_gen_tps:.2f}\n")
+    output.write(f"# avg_ttft_ms,{summary.avg_ttft_ms:.2f}\n")
+    output.write(f"# performance_score,{summary.performance_score:.2f}\n")
+
+    csv_str = output.getvalue()
+
+    if file:
+        print(csv_str, file=file, end='')
+    else:
+        print(csv_str, end='')
+
+    return csv_str
+
+
+def output_console_to_string(results: List[TestResult], summary: ScoreSummary,
+                              gpu_info: str, model_info: str, plaintext: bool = False) -> str:
+    """Capture console output to a string."""
+    import io
+    import sys
+
+    # Capture stdout
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+
+    try:
+        print()
+        print_test_results_table(results, gpu_info, model_info)
+        print_results_summary(summary, plaintext=True)  # Always plaintext for file
+    finally:
+        sys.stdout = old_stdout
+
+    return buffer.getvalue()
 
 
 def main() -> int:
@@ -267,6 +327,9 @@ def main() -> int:
 
     if args.cpu or args.gpu == "disabled":
         n_gpu_layers = 0
+    elif args.gpu_index is not None and args.gpu_index >= 0:
+        # Use specific GPU by index (e.g., Vulkan1 for index 1)
+        device = f"Vulkan{args.gpu_index}"
     elif args.gpu != "auto":
         # Map GPU type to device string if needed
         device = args.gpu
@@ -281,6 +344,7 @@ def main() -> int:
             model_path=str(model_path),
             n_gpu_layers=n_gpu_layers,
             device=device,
+            gpu_index=args.gpu_index,
             threads=args.threads,
             verbose=args.verbose,
         )
@@ -295,6 +359,13 @@ def main() -> int:
         print(f"Running {len(tests)} tests with {repetitions} repetition(s) each")
         print()
 
+    # Get build info first (we'll need it for submission)
+    build_info = None
+    try:
+        build_info = bench.get_build_info()
+    except Exception:
+        pass  # Non-fatal, we can submit without it
+
     # Run benchmarks
     results = run_benchmarks(bench, tests, repetitions, args.verbose)
 
@@ -307,7 +378,14 @@ def main() -> int:
 
     # Get display info
     if results:
-        gpu_info = results[0].gpu_info or "CPU"
+        # Select correct GPU from comma-separated list based on gpu_index
+        gpu_info_full = results[0].gpu_info or "CPU"
+        gpu_parts = gpu_info_full.split(",")
+        gpu_index = results[0].gpu_index
+        if gpu_index < len(gpu_parts):
+            gpu_info = gpu_parts[gpu_index].strip()
+        else:
+            gpu_info = gpu_parts[0].strip()
         model_info = results[0].model_type or model_path.name
 
         # Truncate long strings
@@ -318,7 +396,7 @@ def main() -> int:
 
     # Output results
     if args.output == "json":
-        output_json(results, summary)
+        output_json(results, summary, build_info)
     elif args.output == "csv":
         output_csv(results, summary)
     else:
@@ -326,6 +404,32 @@ def main() -> int:
         print()
         print_test_results_table(results, gpu_info, model_info)
         print_results_summary(summary, args.plaintext)
+
+    # Save to files if requested
+    if args.save_csv:
+        try:
+            with open(args.save_csv, 'w') as f:
+                output_csv(results, summary, file=f)
+            print(f"CSV saved to: {args.save_csv}")
+        except IOError as e:
+            print(f"Error saving CSV: {e}", file=sys.stderr)
+
+    if args.save_json:
+        try:
+            with open(args.save_json, 'w') as f:
+                output_json(results, summary, build_info, file=f)
+            print(f"JSON saved to: {args.save_json}")
+        except IOError as e:
+            print(f"Error saving JSON: {e}", file=sys.stderr)
+
+    if args.save_console:
+        try:
+            console_output = output_console_to_string(results, summary, gpu_info, model_info, args.plaintext)
+            with open(args.save_console, 'w') as f:
+                f.write(console_output)
+            print(f"Console output saved to: {args.save_console}")
+        except IOError as e:
+            print(f"Error saving console output: {e}", file=sys.stderr)
 
     # Handle result submission
     if not args.no_send_results:
@@ -338,7 +442,7 @@ def main() -> int:
 
         if should_submit:
             print("Submitting results...")
-            success, result = submit_results(results, summary, verbose=args.verbose)
+            success, result = submit_results(results, summary, build_info=build_info, verbose=args.verbose)
 
             if success:
                 print(f"Result Link: {result}")
