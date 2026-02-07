@@ -26,14 +26,34 @@ def get_system_info() -> Dict[str, Any]:
     # Try to get RAM info
     ram_gb = 0.0
     try:
-        with open('/proc/meminfo', 'r') as f:
-            for line in f:
-                if line.startswith('MemTotal:'):
-                    # Convert from KB to GB
-                    ram_kb = int(line.split()[1])
-                    ram_gb = ram_kb / (1024 * 1024)
-                    break
-    except (FileNotFoundError, PermissionError):
+        if uname.system == "Windows":
+            import ctypes
+            class MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong),
+                            ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            mem = MEMORYSTATUSEX()
+            mem.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(mem))
+            ram_gb = mem.ullTotalPhys / (1024 ** 3)
+        elif uname.system == "Darwin":
+            import subprocess as _sp
+            out = _sp.check_output(["sysctl", "-n", "hw.memsize"], text=True)
+            ram_gb = int(out.strip()) / (1024 ** 3)
+        else:
+            with open('/proc/meminfo', 'r') as f:
+                for line in f:
+                    if line.startswith('MemTotal:'):
+                        ram_kb = int(line.split()[1])
+                        ram_gb = ram_kb / (1024 * 1024)
+                        break
+    except Exception:
         pass
 
     return {

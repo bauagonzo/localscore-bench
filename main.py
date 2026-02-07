@@ -29,19 +29,21 @@ from lib.submit import submit_results, get_user_confirmation
 def find_llama_bench() -> Optional[Path]:
     """Try to find llama-bench in common locations."""
     script_dir = Path(__file__).parent.resolve()
+    exe = ".exe" if sys.platform == "win32" else ""
+    bench_name = f"llama-bench{exe}"
 
     # Check relative to script
     candidates = [
-        script_dir / "../llama-b7935/llama-bench",
-        script_dir / "llama-bench",
-        Path("./llama-bench"),
-        Path("./llama-b7935/llama-bench"),
+        script_dir / "../llama-b7935" / bench_name,
+        script_dir / bench_name,
+        Path(".") / bench_name,
+        Path("./llama-b7935") / bench_name,
     ]
 
     # Check PATH
     path_dirs = os.environ.get("PATH", "").split(os.pathsep)
     for d in path_dirs:
-        candidates.append(Path(d) / "llama-bench")
+        candidates.append(Path(d) / bench_name)
 
     for candidate in candidates:
         if candidate.exists():

@@ -3,6 +3,7 @@
 import json
 import subprocess
 import os
+import sys
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from pathlib import Path
@@ -144,10 +145,12 @@ class LlamaBench:
         # Set library path to find shared libraries
         env = os.environ.copy()
         lib_dir = str(self.llama_bench_path.parent)
-        if "LD_LIBRARY_PATH" in env:
-            env["LD_LIBRARY_PATH"] = f"{lib_dir}:{env['LD_LIBRARY_PATH']}"
+        if sys.platform == "win32":
+            env["PATH"] = lib_dir + ";" + env.get("PATH", "")
+        elif sys.platform == "darwin":
+            env["DYLD_LIBRARY_PATH"] = lib_dir + ":" + env.get("DYLD_LIBRARY_PATH", "")
         else:
-            env["LD_LIBRARY_PATH"] = lib_dir
+            env["LD_LIBRARY_PATH"] = lib_dir + ":" + env.get("LD_LIBRARY_PATH", "")
 
         result = subprocess.run(
             cmd,
