@@ -2,6 +2,8 @@
 
 A reimplementation of [LocalScore](https://localscore.ai) using `llama-bench` as the underlying benchmarking engine.
 
+📊 **[View benchmark results →](https://github.com/bauagonzo/llm-bench-lab)**
+
 ## Overview
 
 This tool wraps `llama-bench` to provide the same benchmarking experience as the original localscore tool, including:
