@@ -296,6 +296,26 @@ def output_console_to_string(results: List[TestResult], summary: ScoreSummary,
     return buffer.getvalue()
 
 
+def _detect_device_name(llama_bench_path: str, gpu_index: int) -> str:
+    """Probe llama-bench stderr to figure out the backend prefix (Vulkan, CUDA, etc.)."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            [llama_bench_path, "--help"],
+            capture_output=True, text=True, timeout=10,
+            env={**os.environ, "LD_LIBRARY_PATH": str(Path(llama_bench_path).parent)}
+        )
+        output = result.stderr + result.stdout
+        if "ggml_cuda_init" in output:
+            return f"CUDA{gpu_index}"
+        elif "ggml_vulkan" in output:
+            return f"Vulkan{gpu_index}"
+    except Exception:
+        pass
+    # Fallback: assume Vulkan
+    return f"Vulkan{gpu_index}"
+
+
 def main() -> int:
     """Main entry point."""
     args = parse_args()
@@ -329,12 +349,15 @@ def main() -> int:
 
     if args.cpu or args.gpu == "disabled":
         n_gpu_layers = 0
-    elif args.gpu_index is not None and args.gpu_index >= 0:
-        # Use specific GPU by index (e.g., Vulkan1 for index 1)
-        device = f"Vulkan{args.gpu_index}"
     elif args.gpu != "auto":
-        # Map GPU type to device string if needed
+        # Explicit GPU backend requested — pass as device string
         device = args.gpu
+    elif args.gpu_index is not None and args.gpu_index > 0:
+        # Non-default GPU index — probe llama-bench to pick the right device name.
+        # For Vulkan builds this is "Vulkan{N}", for CUDA "CUDA{N}", etc.
+        # We detect the backend by checking what the binary reports.
+        device = _detect_device_name(args.llama_bench_path or str(find_llama_bench()), args.gpu_index)
+    # else: gpu_index==0 with auto → let llama-bench pick its default device
 
     # Select tests
     tests = get_quick_tests() if args.quick else BASELINE_TESTS
