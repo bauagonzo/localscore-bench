@@ -24,6 +24,7 @@ from lib.display import (
     clear_progress,
 )
 from lib.submit import submit_results, get_user_confirmation
+from lib.gpu_monitor import GpuMonitor
 
 
 def find_llama_bench() -> Optional[Path]:
@@ -182,6 +183,21 @@ Examples:
         help="Save console output to text file",
     )
 
+    parser.add_argument(
+        "--monitor-gpu",
+        dest="monitor_gpu",
+        metavar="FILE",
+        help="Log GPU stats (utilization, power, temp, memory, clocks) to CSV via nvidia-smi",
+    )
+
+    parser.add_argument(
+        "--monitor-interval",
+        dest="monitor_interval",
+        type=int,
+        default=100,
+        help="GPU monitoring interval in milliseconds (default: 100)",
+    )
+
     return parser.parse_args()
 
 
@@ -200,12 +216,16 @@ def run_benchmarks(
     tests: List[TestConfig],
     repetitions: int,
     verbose: bool = False,
+    gpu_monitor: Optional["GpuMonitor"] = None,
 ) -> List[TestResult]:
     """Run all benchmark tests."""
     results = []
 
     for i, test_config in enumerate(tests, 1):
         print_progress(test_config.name, i, len(tests))
+
+        if gpu_monitor:
+            gpu_monitor.add_marker(f"START {test_config.name}")
 
         if verbose:
             print()  # Newline for verbose output
@@ -215,12 +235,17 @@ def run_benchmarks(
             results.append(result)
             clear_progress()
 
+            if gpu_monitor:
+                gpu_monitor.add_marker(f"END {test_config.name}")
+
             if verbose:
                 print(f"  {test_config.name}: pp={result.prompt_tps:.2f} t/s, "
                       f"tg={result.gen_tps:.2f} t/s, ttft={result.ttft_ms:.2f} ms")
 
         except Exception as e:
             clear_progress()
+            if gpu_monitor:
+                gpu_monitor.add_marker(f"ERROR {test_config.name}")
             print(f"Error running {test_config.name}: {e}")
             if verbose:
                 import traceback
@@ -391,8 +416,30 @@ def main() -> int:
     except Exception:
         pass  # Non-fatal, we can submit without it
 
+    # Start GPU monitoring if requested
+    gpu_monitor = None
+    if args.monitor_gpu:
+        gpu_monitor = GpuMonitor(
+            output_path=args.monitor_gpu,
+            interval_ms=args.monitor_interval,
+            gpu_index=args.gpu_index,
+        )
+        try:
+            gpu_monitor.start()
+            if args.output == "console":
+                print(f"GPU monitoring → {args.monitor_gpu} (every {args.monitor_interval}ms)")
+        except FileNotFoundError:
+            print("Warning: nvidia-smi not found, GPU monitoring disabled", file=sys.stderr)
+            gpu_monitor = None
+
     # Run benchmarks
-    results = run_benchmarks(bench, tests, repetitions, args.verbose)
+    results = run_benchmarks(bench, tests, repetitions, args.verbose, gpu_monitor=gpu_monitor)
+
+    # Stop GPU monitoring
+    if gpu_monitor:
+        gpu_monitor.stop()
+        if args.output == "console":
+            print(f"GPU log saved: {args.monitor_gpu}")
 
     if not results:
         print("Error: No benchmark results", file=sys.stderr)
