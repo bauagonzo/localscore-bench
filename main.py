@@ -198,6 +198,14 @@ Examples:
         help="GPU monitoring interval in milliseconds (default: 100)",
     )
 
+    parser.add_argument(
+        "--monitor-gpu-index",
+        dest="monitor_gpu_index",
+        type=int,
+        default=0,
+        help="nvidia-smi GPU index for monitoring (default: 0, first NVIDIA GPU)",
+    )
+
     return parser.parse_args()
 
 
@@ -422,7 +430,7 @@ def main() -> int:
         gpu_monitor = GpuMonitor(
             output_path=args.monitor_gpu,
             interval_ms=args.monitor_interval,
-            gpu_index=args.gpu_index,
+            gpu_index=args.monitor_gpu_index,
         )
         try:
             gpu_monitor.start()

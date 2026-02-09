@@ -24,7 +24,7 @@ class GpuMonitor:
 
     output_path: str
     interval_ms: int = 100          # sampling interval (default 100 ms)
-    gpu_index: int = 0              # which GPU to monitor
+    gpu_index: int = 0              # nvidia-smi GPU index (0 = first NVIDIA GPU)
     _proc: Optional[subprocess.Popen] = None
 
     # nvidia-smi query fields
@@ -48,8 +48,6 @@ class GpuMonitor:
         if self._proc is not None:
             return  # already running
 
-        interval_s = self.interval_ms / 1000.0
-        # nvidia-smi uses ms for -l but also supports fractional seconds via lms
         cmd = [
             "nvidia-smi",
             f"--query-gpu={self.QUERY_FIELDS}",
@@ -67,6 +65,12 @@ class GpuMonitor:
         )
         self._outfile = outfile
 
+        # Markers go to a sidecar file so they don't conflict with nvidia-smi stdout
+        self._marker_path = self.output_path + ".markers"
+        self._marker_file = open(self._marker_path, "w")
+        self._marker_file.write("# Benchmark phase markers\n")
+        self._marker_file.flush()
+
     def stop(self) -> Optional[str]:
         """Stop nvidia-smi logging.  Returns the output file path."""
         if self._proc is None:
@@ -82,15 +86,27 @@ class GpuMonitor:
         self._outfile.close()
         self._proc = None
 
+        # Close marker file
+        if hasattr(self, "_marker_file") and self._marker_file:
+            self._marker_file.close()
+
+        # Merge markers into the main CSV as comments
+        if hasattr(self, "_marker_path") and Path(self._marker_path).exists():
+            markers = Path(self._marker_path).read_text()
+            with open(self.output_path, "a") as f:
+                f.write("\n")
+                f.write(markers)
+            Path(self._marker_path).unlink()
+
         return self.output_path
 
     def add_marker(self, label: str) -> None:
-        """Write a comment marker into the CSV (for correlating with test phases).
-
-        This appends directly to the file so it interleaves with nvidia-smi output.
-        """
+        """Write a marker with timestamp to the sidecar marker file."""
         try:
-            with open(self.output_path, "a") as f:
-                f.write(f"# MARKER: {label} @ {time.strftime('%Y/%m/%d %H:%M:%S.%f' if hasattr(time, 'strftime') else '%Y/%m/%d %H:%M:%S')}\n")
+            from datetime import datetime as _dt
+            ts = _dt.now().strftime("%Y/%m/%d %H:%M:%S.%f")
+            if hasattr(self, "_marker_file") and self._marker_file:
+                self._marker_file.write(f"# MARKER: {label} @ {ts}\n")
+                self._marker_file.flush()
         except Exception:
             pass  # best effort
