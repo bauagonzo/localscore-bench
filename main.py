@@ -97,7 +97,9 @@ Examples:
         "-i", "--gpu-index",
         type=int,
         default=0,
-        help="Select GPU by index (default: 0)",
+        help="Vulkan/CUDA device index for llama-bench inference (default: 0). "
+             "On systems with an integrated GPU (e.g. AMD iGPU at index 0), "
+             "set -i 1 to target the discrete NVIDIA GPU.",
     )
 
     parser.add_argument(
@@ -203,7 +205,11 @@ Examples:
         dest="monitor_gpu_index",
         type=int,
         default=0,
-        help="nvidia-smi GPU index for monitoring (default: 0, first NVIDIA GPU)",
+        help="nvidia-smi GPU index for monitoring (default: 0). "
+             "Unlike -i/--gpu-index which uses the Vulkan/CUDA device list "
+             "(including iGPUs), nvidia-smi only sees NVIDIA GPUs. "
+             "So if your NVIDIA GPU is Vulkan device 1 (because device 0 is "
+             "an AMD iGPU), it is still nvidia-smi index 0.",
     )
 
     return parser.parse_args()
